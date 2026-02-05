@@ -8,41 +8,16 @@ from pathlib import Path
 
 import anyio
 
-from codex_agent_sdk import CodexClient, CodexClientOptions
+from codex_agent_sdk import Agent, CommandApproval, FileChangeApproval, ToolInput
 
-MODEL = os.getenv("CODEX_MODEL", "gpt-5.1-codex")
-CODEX_CLI = os.getenv("CODEX_CLI", "codex")
-EFFORT = os.getenv("CODEX_EFFORT", "high")
+MODEL = os.getenv("CODEX_MODEL", "gpt-5.2-codex")
+EFFORT = os.getenv("CODEX_EFFORT", "medium")
 
-
-async def approve_commands(_params: dict) -> str:
-    # Accept command execution requests. Adjust for your policy.
-    return "accept"
-
-
-async def approve_file_changes(_params: dict) -> str:
-    # Accept file change approvals if they occur (rare for analysis tasks).
-    return "accept"
-
-
-async def tool_user_input(params: dict) -> dict:
-    # Provide empty answers for request_user_input prompts.
-    answers = {}
-    for question in params.get("questions", []):
-        qid = question.get("id")
-        if qid:
-            answers[qid] = {"answers": [""]}
-    return {"answers": answers}
-
-
-async def dynamic_tool_call(_params: dict) -> dict:
-    # If the agent tries to call a client-side dynamic tool, fail clearly.
-    return {"output": "dynamic tools are not implemented in this script", "success": False}
 
 def _resolve_project_path(arg_path: str | None) -> Path:
     env_path = os.getenv("CODEX_PROJECT") or os.getenv("CCODEX_PROJECT")
-    path_str = arg_path or env_path or os.getcwd()
-    path = Path(path_str).expanduser().resolve()
+    raw = arg_path or env_path
+    path = (Path(raw) if raw else Path.cwd()).expanduser().resolve()
     if not path.exists():
         raise SystemExit(f"Project path does not exist: {path}")
     return path
@@ -64,11 +39,34 @@ async def main() -> None:
     args = _parse_args()
     project_path = _resolve_project_path(args.project)
 
-    options = CodexClientOptions(
-        codex_path=CODEX_CLI,
-        client_name="codex_sdk_py_example",
-        client_version="0.1.0",
+    # Create agent with builder pattern
+    agent = (
+        Agent()
+        .model(MODEL)
+        .cwd(project_path)
+        .effort(EFFORT)
     )
+
+    # Register handlers with decorators
+    @agent.on_command_approval
+    async def approve_commands(cmd: CommandApproval) -> str:
+        """Accept command execution requests."""
+        return "accept"
+
+    @agent.on_file_change
+    async def approve_file_changes(change: FileChangeApproval) -> str:
+        """Accept file change approvals if they occur."""
+        return "accept"
+
+    @agent.on_tool_input
+    async def tool_user_input(tool_input: ToolInput) -> dict:
+        """Provide empty answers for request_user_input prompts."""
+        answers = {}
+        for question in tool_input.questions:
+            qid = question.get("id")
+            if qid:
+                answers[qid] = {"answers": [""]}
+        return {"answers": answers}
 
     prompt = textwrap.dedent(
         f"""
@@ -85,24 +83,10 @@ async def main() -> None:
         """
     ).strip()
 
-    async with CodexClient(
-        options=options,
-        command_approval_handler=approve_commands,
-        file_change_approval_handler=approve_file_changes,
-        tool_input_handler=tool_user_input,
-        dynamic_tool_handler=dynamic_tool_call,
-    ) as client:
-        thread = await client.thread_start({"model": MODEL, "cwd": str(project_path)})
-        thread_id = thread["thread"]["id"]
-
-        async for delta in client.stream_prompt_text(
-            thread_id,
-            prompt,
-            cwd=str(project_path),
-            approvalPolicy="on-request",
-            effort=EFFORT,
-        ):
-            print(delta, end="", flush=True)
+    # Stream the response
+    async for chunk in agent.run(prompt, approvalPolicy="on-request"):
+        print(chunk, end="", flush=True)
+    print()
 
 
 if __name__ == "__main__":

@@ -3,8 +3,6 @@
 Python SDK for Codex app-server. This SDK wraps the `codex app-server` CLI via a
 subprocess and speaks JSON-RPC over stdio (newline-delimited JSON).
 
-Inspired by the Claude Agent SDK for Python and its subprocess + JSON streaming design.
-
 ## Installation
 
 ```bash
@@ -19,79 +17,166 @@ uv pip install codex-agent-sdk
 
 ## Quick Start
 
+The simplest way to use the SDK:
+
 ```python
 import anyio
-from codex_agent_sdk import CodexClient, CodexClientOptions
+from codex_agent_sdk import run
 
 async def main() -> None:
-    options = CodexClientOptions(client_name="codex_sdk_py", client_version="0.1.0")
-    async with CodexClient(options=options) as client:
-        thread = await client.thread_start({"model": "gpt-5.1-codex"})
-        async for delta in client.stream_prompt_text(
-            thread["thread"]["id"], "Hello Codex"
-        ):
-            print(delta, end="", flush=True)
+    async for chunk in run("Hello Codex!"):
+        print(chunk, end="", flush=True)
 
 anyio.run(main)
 ```
 
-## Real-World Example
+## Using the Agent Class
 
-Analyze a local project with the agent (defaults to current directory):
+```python
+import anyio
+from codex_agent_sdk import Agent
 
-```bash
-CODEX_PROJECT=/path/to/project \
-CODEX_MODEL=gpt-5.1-codex \
-CODEX_CLI=codex \
-CODEX_EFFORT=high \
-uv run python examples/real_world_project_analysis.py
+async def main() -> None:
+    agent = Agent(model="gpt-5.2-codex", auto_approve=True)
+
+    # Stream text
+    async for chunk in agent.run("Explain Python decorators"):
+        print(chunk, end="", flush=True)
+
+anyio.run(main)
 ```
 
-Or pass the project path explicitly:
+### Get Full Response
+
+```python
+# Get full text
+text = await agent.run("What is 2+2?").text()
+print(text)
+
+# Get full response with metadata
+response = await agent.run("Hello").response()
+print(response.text)
+print(response.turn.id)
+```
+
+## Builder Pattern
+
+Configure agents with a fluent API:
+
+```python
+agent = (
+    Agent()
+    .model("gpt-5.2-codex")
+    .cwd("/path/to/project")
+    .effort("medium")
+    .auto_approve_commands()
+    .auto_approve_file_changes()
+)
+```
+
+## Decorator-Based Handlers
+
+Register approval handlers using decorators:
+
+```python
+from codex_agent_sdk import Agent, CommandApproval, FileChangeApproval
+
+agent = Agent()
+
+@agent.on_command_approval
+async def handle_command(cmd: CommandApproval) -> str:
+    print(f"Approving: {cmd.command}")
+    return "accept"  # or "reject"
+
+@agent.on_file_change
+async def handle_file_change(change: FileChangeApproval) -> str:
+    print(f"File change: {change.path}")
+    return "accept"
+
+async for chunk in agent.run("List files in current directory"):
+    print(chunk, end="")
+```
+
+## Multi-Turn Conversations
+
+Maintain conversation context across multiple messages:
+
+```python
+async with agent.conversation() as conv:
+    response = await conv.send("Hi, my name is Alice")
+    print(response.text)
+
+    response = await conv.send("What's my name?")
+    print(response.text)  # Agent remembers "Alice"
+```
+
+## Typed Events
+
+Access rich event objects with pattern matching:
+
+```python
+from codex_agent_sdk import (
+    Agent,
+    MessageDelta,
+    TurnCompleted,
+    ExecStarted,
+    ExecCompleted,
+)
+
+async for event in agent.run("Run ls -la").events():
+    match event:
+        case MessageDelta(delta=text):
+            print(text, end="")
+        case ExecStarted(command=cmd):
+            print(f"\n> Running: {cmd}")
+        case ExecCompleted(exit_code=code):
+            print(f"\n> Exit code: {code}")
+        case TurnCompleted(status=status):
+            print(f"\nCompleted: {status}")
+```
+
+## Real-World Example
+
+Analyze a local project:
 
 ```bash
 uv run python examples/real_world_project_analysis.py --project /path/to/project
 ```
 
-## Handling Approvals
+Or set environment variables:
 
-```python
-async def approve_commands(params: dict) -> str:
-    # Accept or decline based on your policy.
-    return "accept"
-
-async with CodexClient(
-    options=CodexClientOptions(),
-    command_approval_handler=approve_commands,
-) as client:
-    ...
+```bash
+CODEX_PROJECT=/path/to/project \
+CODEX_MODEL=gpt-5.2-codex \
+CODEX_EFFORT=medium \
+uv run python examples/real_world_project_analysis.py
 ```
 
 ## Schema Validation
 
-```python
-from codex_agent_sdk import CodexSchemaValidator
-
-schema = CodexSchemaValidator("/path/to/schema/json")
-async with CodexClient(schema_validator=schema) as client:
-    ...
-```
-
-Install the optional dependency:
+Optionally validate messages against JSON schemas:
 
 ```bash
 pip install codex-agent-sdk[schema]
 ```
 
-Generate schema with the Codex CLI:
+CLI tools for schema management:
 
 ```bash
-codex app-server generate-json-schema --out ./codex-schema
+# Validate SDK <-> installed Codex CLI compatibility
+codex-agent-sdk validate
+
+# Generate schema to a directory
+codex-agent-sdk schema generate --out ./codex-schema
+
+# Detect breaking schema changes
+codex-agent-sdk schema diff --baseline ./codex-schema
+codex-agent-sdk schema check-breaking --baseline ./codex-schema
 ```
 
 ## Logging
 
-This library logs under the `codex_agent_sdk` logger namespace. To enable debug logs:
+Enable debug logs:
 
 ```python
 import logging
@@ -100,55 +185,22 @@ logging.getLogger("codex_agent_sdk").setLevel(logging.DEBUG)
 logging.basicConfig(level=logging.INFO)
 ```
 
-To silence library logs while keeping your app logs:
-
-```python
-logging.getLogger("codex_agent_sdk").setLevel(logging.WARNING)
-```
-
 ## Development
 
-Create a dev environment:
-
 ```bash
+# Create dev environment
 uv sync --all-extras
-```
 
-Run tests:
-
-```bash
+# Run tests
 uv run pytest -q
-```
 
-Run integration tests (requires Codex CLI auth):
-
-```bash
+# Run integration tests (requires Codex CLI auth)
 CODEX_INTEGRATION=1 uv run pytest -q
-```
-
-## Release (PyPI)
-
-Build:
-
-```bash
-uv build
-```
-
-Publish:
-
-```bash
-uv publish
 ```
 
 ## Contributing
 
 See `docs/CONTRIBUTING.md`.
-
-## Notes
-
-- The SDK requires `codex` to be installed and available on PATH.
-- The SDK initializes the app-server with an `initialize` request and sends an
-  `initialized` notification before issuing other requests.
 
 ## License
 

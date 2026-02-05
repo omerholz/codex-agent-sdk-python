@@ -81,7 +81,7 @@ async def test_request_response_roundtrip() -> None:
     client = CodexClient(transport=transport)
     await client.connect()
 
-    resp = await client.thread_start({"model": "gpt-5.1-codex"})
+    resp = await client.thread_start({"model": "gpt-5.2-codex"})
     assert resp["thread"]["id"] == "thr_123"
 
     await client.close()

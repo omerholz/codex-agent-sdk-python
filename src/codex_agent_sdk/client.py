@@ -274,7 +274,7 @@ class CodexClient:
     async def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         if not self._transport:
             raise CodexConnectionError("Not connected")
-        msg = {"method": method}
+        msg: dict[str, Any] = {"method": method}
         if params is not None:
             msg["params"] = params
         if self._schema_validator is not None:
@@ -301,25 +301,28 @@ class CodexClient:
         self, thread_id: str, items: list[dict[str, Any]], **turn_params: Any
     ) -> AsyncIterator[str]:
         """Start a turn and yield text deltas until completion."""
-        params = {"threadId": thread_id, "input": items}
-        params.update(turn_params)
-        response = await self.turn_start(params)
+        request_params = {"threadId": thread_id, "input": items}
+        request_params.update(turn_params)
+        response = await self.turn_start(request_params)
         turn_id = response.get("turn", {}).get("id")
 
         async for note in self.notifications():
-            method = note.get("method")
-            params = note.get("params") or {}
+            raw_method = note.get("method")
+            method = raw_method if isinstance(raw_method, str) else None
+            raw_params = note.get("params")
+            note_params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
 
             if method == "item/agentMessage/delta" and (
-                params.get("threadId") == thread_id
-                and (turn_id is None or params.get("turnId") == turn_id)
+                note_params.get("threadId") == thread_id
+                and (turn_id is None or note_params.get("turnId") == turn_id)
             ):
-                delta = params.get("delta")
+                delta = note_params.get("delta")
                 if isinstance(delta, str):
                     yield delta
 
             if method == "turn/completed":
-                turn = params.get("turn") or {}
+                raw_turn = note_params.get("turn")
+                turn: dict[str, Any] = raw_turn if isinstance(raw_turn, dict) else {}
                 if turn_id is None or turn.get("id") == turn_id:
                     return
 

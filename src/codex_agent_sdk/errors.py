@@ -35,6 +35,10 @@ class CodexSchemaValidationError(CodexSDKError):
     """Raised when JSON schema validation fails."""
 
 
+class CodexSchemaGenerationError(CodexSDKError):
+    """Raised when JSON schema cannot be generated or processed."""
+
+
 @dataclass
 class CodexRPCError(CodexSDKError):
     """JSON-RPC error returned by the app-server."""

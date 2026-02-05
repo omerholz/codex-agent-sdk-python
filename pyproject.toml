@@ -47,6 +47,9 @@ Homepage = "https://github.com/openai/codex"
 Documentation = "https://developers.openai.com/codex"
 Issues = "https://github.com/openai/codex/issues"
 
+[project.scripts]
+codex-agent-sdk = "codex_agent_sdk.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/codex_agent_sdk"]
 only-include = ["src/codex_agent_sdk"]

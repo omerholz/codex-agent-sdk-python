@@ -12,6 +12,8 @@ Thanks for contributing to `codex-agent-sdk`.
 
 1. `uv sync --all-extras`
 2. `uv run pytest -q`
+3. `uv run ruff check .`
+4. `uv run mypy src`
 
 ## Integration Tests
 

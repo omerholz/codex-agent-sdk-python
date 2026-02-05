@@ -1,16 +1,15 @@
+"""Quick start example for Codex Agent SDK."""
+
 import anyio
 
-from codex_agent_sdk import CodexClient, CodexClientOptions
+from codex_agent_sdk import run
 
 
 async def main() -> None:
-    options = CodexClientOptions(client_name="codex_sdk_py", client_version="0.1.0")
-    async with CodexClient(options=options) as client:
-        thread = await client.thread_start({"model": "gpt-5.1-codex"})
-        async for delta in client.stream_prompt_text(
-            thread["thread"]["id"], "Hello Codex"
-        ):
-            print(delta, end="", flush=True)
+    """Stream a simple prompt to the console."""
+    async for chunk in run("Hello Codex!"):
+        print(chunk, end="", flush=True)
+    print()
 
 
 if __name__ == "__main__":

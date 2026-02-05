@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from typing import Any
 
 from .errors import CodexSchemaValidationError
 
+Draft7Validator: Any | None
+ValidationError: type[Exception]
+_IMPORT_ERROR: Exception | None
+
 try:  # Optional dependency
-    from jsonschema import Draft7Validator
-    from jsonschema.exceptions import ValidationError
+    _jsonschema: Any = importlib.import_module("jsonschema")
+    Draft7Validator = _jsonschema.Draft7Validator
+    _jsonschema_exceptions: Any = importlib.import_module("jsonschema.exceptions")
+    ValidationError = _jsonschema_exceptions.ValidationError
 except Exception as exc:  # pragma: no cover - optional dependency
-    Draft7Validator = None  # type: ignore[assignment]
-    ValidationError = Exception  # type: ignore[misc]
+    Draft7Validator = None
+    ValidationError = Exception
     _IMPORT_ERROR = exc
 else:  # pragma: no cover - import success
     _IMPORT_ERROR = None
@@ -56,7 +63,7 @@ class CodexSchemaValidator:
             validator.validate(obj)
         except ValidationError as exc:
             raise CodexSchemaValidationError(
-                f"Schema validation failed for {schema_name}: {exc.message}"
+                f"Schema validation failed for {schema_name}: {exc}"
             ) from exc
 
     def validate_outgoing_request(self, obj: dict[str, Any]) -> None:
@@ -78,3 +85,18 @@ class CodexSchemaValidator:
         if "error" in obj and "id" in obj:
             self._validate("JSONRPCError", obj)
             return
+
+
+def load_schema_validator_from_codex_cli(
+    *, codex_path: str = "codex", experimental: bool = False
+) -> CodexSchemaValidator:
+    """Generate schema via the Codex CLI and return an in-memory validator.
+
+    This is intended as a runtime guardrail: the schema files are generated to a
+    temporary directory, loaded into memory, and then discarded.
+    """
+
+    from .schema_tools import generated_schema_dir
+
+    with generated_schema_dir(codex_path=codex_path, experimental=experimental) as schema_dir:
+        return CodexSchemaValidator(schema_dir)
