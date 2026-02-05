@@ -5,11 +5,20 @@ subprocess and speaks JSON-RPC over stdio (newline-delimited JSON).
 
 ## Installation
 
+This SDK launches `codex app-server` via the Codex CLI, so make sure `codex` is installed and
+available on your `PATH`.
+
 ```bash
 pip install codex-agent-sdk
 ```
 
 Using `uv`:
+
+```bash
+uv add codex-agent-sdk
+```
+
+Or, install into the current environment:
 
 ```bash
 uv pip install codex-agent-sdk
